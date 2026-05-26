@@ -51,7 +51,7 @@ wait_for_server() {
 }
 
 run_model() {
-  local model_path="models/$1"
+  local model_path="~/tomo/models/$1"
   echo ""
   echo "========================================"
   echo "Model: $model_path"
