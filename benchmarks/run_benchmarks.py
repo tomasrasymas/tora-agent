@@ -154,10 +154,11 @@ def call_model(base_url: str, model: str, test: dict) -> dict:
         "messages": test["messages"],
         "temperature": 0.0,
         "stream": False,
-        "max_tokens": 2048,
-        # llama.cpp-specific: disable KV cache reuse so each run measures cold
-        # prompt processing, not a cache hit from the previous identical request.
-        "extra_body": {"cache_prompt": False},
+        "max_tokens": test.get("max_tokens", 2048),
+        "extra_body": {
+            "chat_template_kwargs": {"enable_thinking": False},
+            "cache_prompt": False,
+        },
     }
     if test.get("tools"):
         kwargs["tools"] = test["tools"]

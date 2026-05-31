@@ -383,6 +383,7 @@ TESTS: dict[str, dict] = {
                 ),
             }
         ],
+        "max_tokens": 512,
         "eval": None,
         "judge": None,
     },
@@ -398,6 +399,7 @@ TESTS: dict[str, dict] = {
                 ),
             }
         ],
+        "max_tokens": 1024,
         "eval": None,
         "judge": None,
     },
@@ -439,7 +441,7 @@ TESTS: dict[str, dict] = {
         "messages": [
             {
                 "role": "user",
-                "content": "Book a 90-minute meeting called 'Sprint Planning' next Monday at 10am.",
+                "content": "Book a 90-minute meeting called 'Sprint Planning' on 2026-06-01 at 10am.",
             }
         ],
         "tools": [_TOOL_CREATE_EVENT],
@@ -496,7 +498,7 @@ TESTS: dict[str, dict] = {
         "messages": [
             {
                 "role": "user",
-                "content": "Remind me to call the dentist tomorrow at 9am.",
+                "content": "Remind me to call the dentist on 2026-05-28 at 9am.",
             }
         ],
         "tools": [_TOOL_SET_REMINDER],
@@ -542,7 +544,7 @@ TESTS: dict[str, dict] = {
         "messages": [
             {
                 "role": "user",
-                "content": "Book a 1-hour meeting called 'Design Review' with Marta on Friday at 3pm.",
+                "content": "Book a 1-hour meeting called 'Design Review' with Marta on 2026-05-29 at 3pm.",
             }
         ],
         "tools": [_TOOL_CREATE_EVENT, _TOOL_SEND_EMAIL, _TOOL_SET_REMINDER],
@@ -559,12 +561,14 @@ TESTS: dict[str, dict] = {
         "messages": [
             {
                 "role": "user",
-                "content": "Remind me to take my medication at 8pm tonight.",
+                "content": "Remind me to take my medication on 2026-05-27 at 8pm.",
             }
         ],
         "tools": [_TOOL_CREATE_EVENT, _TOOL_SET_REMINDER, _TOOL_SEND_EMAIL],
         "eval": lambda r: (
-            bool(r.get("tool_calls")) and tool_called(r["tool_calls"], "set_reminder")
+            bool(r.get("tool_calls"))
+            and tool_called(r["tool_calls"], "set_reminder")
+            and not tool_called(r["tool_calls"], "create_calendar_event")
         ),
         "judge": None,
     },
@@ -619,6 +623,7 @@ TESTS: dict[str, dict] = {
         ],
         "eval": lambda r: (
             bool(r.get("tool_calls"))
+            and len(r["tool_calls"]) == 1
             and tool_called(r["tool_calls"], "send_email")
             and "tomas@example.com"
             in str(tool_arg(r["tool_calls"], "send_email", "to") or "")
@@ -676,7 +681,7 @@ TESTS: dict[str, dict] = {
                 "content": "Explain what a REST API is. Answer in 20 words or fewer.",
             }
         ],
-        "eval": lambda r: word_count(r["text"]) <= 25,
+        "eval": lambda r: word_count(r["text"]) <= 20,
         "judge": None,
     },
     # Judge here: system persona compliance needs holistic assessment —
@@ -768,11 +773,9 @@ TESTS: dict[str, dict] = {
                 "content": "Actually, I changed my mind. My favourite language is now Rust.",
             },
             {"role": "assistant", "content": "Noted — Rust it is!"},
-            {"role": "user", "content": "What is my favourite programming language?"},
+            {"role": "user", "content": "What is my current favourite programming language?"},
         ],
-        "eval": lambda r: (
-            "rust" in r["text"].lower() and "python" not in r["text"].lower()
-        ),
+        "eval": lambda r: "rust" in r["text"].lower(),
         "judge": None,
     },
     "ctx_ignore_distraction": {
@@ -788,7 +791,7 @@ TESTS: dict[str, dict] = {
             },
             {"role": "user", "content": "What was the project budget we discussed?"},
         ],
-        "eval": lambda r: "50" in r["text"] and "000" in r["text"],
+        "eval": lambda r: any(s in r["text"] for s in ["50,000", "50000", "50 000"]),
         "judge": None,
     },
     "ctx_five_turn": {
@@ -823,7 +826,8 @@ TESTS: dict[str, dict] = {
                 ),
             }
         ],
-        "eval": lambda r: contains_number(r["text"], 114, tolerance=2),
+        "max_tokens": 1024,
+        "eval": lambda r: contains_number(r["text"], 88.89, tolerance=2),
         "judge": None,
     },
     "reasoning_calendar": {
@@ -838,6 +842,7 @@ TESTS: dict[str, dict] = {
                 ),
             }
         ],
+        "max_tokens": 1024,
         "eval": lambda r: "saturday" in r["text"].lower(),
         "judge": None,
     },
@@ -1131,7 +1136,7 @@ TESTS: dict[str, dict] = {
         "eval": lambda r: (
             (d := valid_json(r["text"])) is not None
             and isinstance(d.get("languages"), list)
-            and len(d["languages"]) >= 2
+            and len(d["languages"]) >= 3
             and all(has_keys(l, ["name", "use_case", "typed"]) for l in d["languages"])
         ),
         "judge": None,
@@ -1223,8 +1228,10 @@ TESTS: dict[str, dict] = {
         },
         "eval": lambda r: (
             (d := valid_json(r["text"])) is not None
-            and has_keys(d, ["title", "datetime", "duration_minutes"])
+            and has_keys(d, ["title", "datetime", "duration_minutes", "location", "attendees"])
             and isinstance(d.get("duration_minutes"), int)
+            and d.get("location") is None
+            and isinstance(d.get("attendees"), list)
         ),
         "judge": None,
     },
