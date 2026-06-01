@@ -69,7 +69,7 @@ All from [Unsloth](https://huggingface.co/unsloth) as GGUF. Each model is benchm
 - `unsloth/Qwen3.6-27B-MTP-GGUF` — dense 27B, MTP
 - `unsloth/Qwen3.6-27B-GGUF` — dense 27B
 
-Total: **18 model × quant combinations** planned; **16 run so far** (the `Qwen3.6-35B-A3B` BF16 variants, MTP and non-MTP, are not yet benchmarked).
+Total: **16 model × quant combinations** benchmarked. The two `Qwen3.6-35B-A3B` BF16 variants (MoE and MTP) didn't fit on hardware, so they're excluded.
 
 ## Results
 
