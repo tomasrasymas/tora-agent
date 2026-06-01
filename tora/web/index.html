@@ -1,0 +1,584 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>TORA · Personal Assistant</title>
+    <style>
+      :root {
+        --bg: #0e0f12;
+        --text: #f2f3f5;
+        --muted: #8a8f99;
+        --surface: #1b1e24;
+        --composer-bg: #16181d;
+        --composer-border: #2a2f37;
+        --pill-bg: #21252c;
+        --pill-border: #313742;
+        --accent: #c8ff00;
+        --accent-text: #0e0f12;
+        --send-bg: #2a2f37;
+        --send-bg-active: var(--accent);
+        --user-bubble: #21252c;
+      }
+      * { box-sizing: border-box; }
+      html { height: 100%; -webkit-text-size-adjust: 100%; }
+      body {
+        margin: 0;
+        /* Dynamic viewport height; JS overrides with the exact visible height
+           so the composer stays above the iOS keyboard. */
+        height: 100vh;
+        height: 100dvh;
+        background: var(--bg);
+        color: var(--text);
+        font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        -webkit-tap-highlight-color: transparent;
+      }
+
+      /* Scroll region: holds the centered empty-state stage, and once chatting,
+         the message list. */
+      #scroller {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+        overscroll-behavior: contain;
+      }
+
+      /* Empty state: greeting + composer vertically centered together. */
+      .stage {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+        padding: 24px max(20px, env(safe-area-inset-left)) 24px max(20px, env(safe-area-inset-right));
+      }
+      body.chatting .stage { display: none; }
+
+      #hero { text-align: center; margin-bottom: 34px; }
+      #hero h1 {
+        margin: 0 0 10px;
+        font-size: 46px;
+        font-weight: 800;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+      }
+      #hero h1 .accent { color: var(--accent); }
+      #hero p {
+        margin: 0;
+        font-size: 20px;
+        color: var(--muted);
+      }
+
+      /* Message list (chat mode). */
+      #messages {
+        width: 100%;
+        max-width: 820px;
+        margin: 0 auto;
+        padding: 28px max(20px, env(safe-area-inset-left)) 16px max(20px, env(safe-area-inset-right));
+        display: none;
+      }
+      body.chatting #messages { display: block; }
+
+      .msg { display: flex; flex-direction: column; margin-bottom: 22px; }
+      .msg.user { align-items: flex-end; }
+      .msg.assistant { align-items: flex-start; }
+      .msg .bubble { white-space: pre-wrap; word-wrap: break-word; }
+      .msg.user .bubble {
+        background: var(--user-bubble);
+        padding: 11px 16px;
+        border-radius: 18px;
+        max-width: 80%;
+      }
+      .msg.assistant .bubble { max-width: 100%; }
+      .msg.assistant .bubble.thinking { color: var(--muted); }
+
+      .reasoning {
+        max-width: 100%;
+        margin-bottom: 10px;
+        border: 1px solid var(--composer-border);
+        border-radius: 14px;
+        overflow: hidden;
+      }
+      .reasoning summary {
+        padding: 7px 14px;
+        color: var(--muted);
+        font-size: 14px;
+        cursor: pointer;
+        user-select: none;
+        list-style: none;
+      }
+      .reasoning summary::-webkit-details-marker { display: none; }
+      .reasoning summary::before { content: "▸ "; }
+      .reasoning[open] summary::before { content: "▾ "; }
+      .reasoning .body {
+        padding: 0 14px 10px;
+        color: var(--muted);
+        font-size: 14px;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+      }
+
+      /* Tool call card. */
+      .tool {
+        max-width: 100%;
+        margin-bottom: 10px;
+        border: 1px solid var(--composer-border);
+        border-radius: 14px;
+        overflow: hidden;
+        font-size: 13px;
+      }
+      .tool-row { padding: 8px 14px; }
+      .tool-row + .tool-row { border-top: 1px solid var(--composer-border); }
+      .tool-name {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-weight: 600;
+      }
+      .tool-name::before { content: "🔧"; }
+      .tool-args,
+      .tool-result {
+        margin-top: 4px;
+        color: var(--muted);
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 12px;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+      }
+      .tool-result.pending { font-style: italic; }
+
+      footer {
+        flex-shrink: 0;
+        background: var(--bg);
+      }
+      body.chatting footer {
+        padding: 8px max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+      }
+
+      /* The composer card — used in both the empty stage and the footer. */
+      .composer {
+        width: min(820px, 100%);
+        margin: 0 auto;
+        background: var(--composer-bg);
+        border: 1px solid var(--composer-border);
+        border-radius: 26px;
+        padding: 8px 8px 8px 18px;
+        box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .composer textarea {
+        width: 100%;
+        resize: none;
+        background: transparent;
+        color: var(--text);
+        border: none;
+        padding: 10px 8px 4px;
+        font-family: inherit;
+        /* 16px keeps iOS Safari from auto-zooming when the field is focused. */
+        font-size: 16px;
+        line-height: 1.5;
+        min-height: 44px;
+        max-height: 220px;
+        outline: none;
+        caret-color: var(--accent);
+      }
+      .composer textarea::placeholder { color: var(--muted); }
+
+      .toolbar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .toolbar .spacer { flex: 1; }
+
+      /* Round icon buttons. */
+      .icon-btn {
+        flex-shrink: 0;
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid var(--composer-border);
+        background: var(--surface);
+        color: var(--text);
+        cursor: pointer;
+        padding: 0;
+        touch-action: manipulation;
+      }
+      .icon-btn:active { transform: scale(0.96); }
+
+      .send-btn {
+        flex-shrink: 0;
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border: none;
+        background: var(--send-bg);
+        color: #fff;
+        cursor: pointer;
+        padding: 0;
+        transition: background 0.15s ease;
+        touch-action: manipulation;
+      }
+      .send-btn.ready { background: var(--send-bg-active); color: var(--accent-text); }
+      .send-btn:disabled { cursor: default; opacity: 0.6; }
+      .send-btn:active { transform: scale(0.96); }
+
+      /* Model badge. */
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        flex-wrap: wrap;
+        max-width: 60%;
+        padding: 5px 10px;
+        border-radius: 12px;
+        background: var(--surface);
+        border: 1px solid var(--composer-border);
+        font-size: 13px;
+      }
+      .badge .cube { color: var(--text); display: inline-flex; }
+      .badge .bname { font-weight: 700; }
+      .badge .pill {
+        padding: 1px 7px;
+        border-radius: 7px;
+        background: var(--pill-bg);
+        border: 1px solid var(--pill-border);
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 12px;
+        white-space: nowrap;
+      }
+    </style>
+  </head>
+  <body class="empty">
+    <main id="scroller">
+      <div class="stage" id="stage">
+        <div id="hero">
+          <h1>Hey, <span class="accent">athlete</span></h1>
+          <p>Your personal assistant for training, nutrition &amp; supplements</p>
+        </div>
+
+        <!-- The composer lives here while empty; JS relocates it to <footer>
+             once the first message is sent. -->
+        <div class="composer" id="composer">
+          <textarea id="input" rows="1" placeholder="Ask TORA anything…" autofocus></textarea>
+          <div class="toolbar">
+            <button class="icon-btn" id="plus" title="Upload files" aria-label="Upload files">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                   stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+              </svg>
+            </button>
+            <span class="spacer"></span>
+            <span class="badge" id="modelBadge" style="display:none"></span>
+            <button class="send-btn" id="send" title="Send" aria-label="Send" disabled>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                   stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="12" y1="19" x2="12" y2="6" /><polyline points="6 12 12 6 18 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div id="messages"></div>
+    </main>
+
+    <footer id="footer"></footer>
+
+    <script>
+      const bodyEl = document.body;
+      const scrollerEl = document.getElementById("scroller");
+      const messagesEl = document.getElementById("messages");
+      const footerEl = document.getElementById("footer");
+      const composerEl = document.getElementById("composer");
+      const inputEl = document.getElementById("input");
+      const sendBtn = document.getElementById("send");
+      const plusBtn = document.getElementById("plus");
+      const modelBadge = document.getElementById("modelBadge");
+
+      // Full conversation history sent to the backend each turn.
+      const history = [];
+
+      function scrollToBottom() {
+        scrollerEl.scrollTop = scrollerEl.scrollHeight;
+      }
+
+      // --- Model badge ----------------------------------------------------
+      // Parse a gguf-style model id (e.g. "gemma-3-27b-it-UD-Q8_K_XL.gguf")
+      // into a bold family name plus a row of monospace pills.
+      const esc = (s) => s.replace(/[&<>"']/g, (c) =>
+        ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+      function renderBadge(id) {
+        const base = (id || "").split("/").pop().trim();
+        if (!base || base === "unknown") return;
+
+        const tokens = base.split("-");
+        const nameTokens = [tokens.shift()];
+        // Fold a trailing pure-number version into the bold name ("gemma" + "3").
+        if (tokens.length && /^\d+$/.test(tokens[0])) nameTokens.push(tokens.shift());
+
+        const cube =
+          '<span class="cube"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" ' +
+          'stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' +
+          '<path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73' +
+          'l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /><polyline points="3.27 6.96 12 12.01 20.73 6.96" />' +
+          '<line x1="12" y1="22.08" x2="12" y2="12" /></svg></span>';
+
+        modelBadge.innerHTML =
+          cube +
+          '<span class="bname">' + esc(nameTokens.join("-")) + "</span>" +
+          tokens.map((t) => '<span class="pill">' + esc(t) + "</span>").join("");
+        modelBadge.style.display = "inline-flex";
+      }
+
+      fetch("/api/model")
+        .then((r) => r.json())
+        .then((d) => renderBadge(d.id))
+        .catch(() => {});
+
+      // --- Message rendering ----------------------------------------------
+      function addBubble(role, text) {
+        const msg = document.createElement("div");
+        msg.className = "msg " + role;
+        const bubble = document.createElement("div");
+        bubble.className = "bubble";
+        bubble.textContent = text;
+        msg.appendChild(bubble);
+        messagesEl.appendChild(msg);
+        scrollToBottom();
+        return bubble;
+      }
+
+      // Assistant turn: a column holding an optional (lazily created) collapsible
+      // reasoning block above the answer bubble.
+      function addAssistant() {
+        const msg = document.createElement("div");
+        msg.className = "msg assistant";
+        const bubble = document.createElement("div");
+        bubble.className = "bubble thinking";
+        bubble.textContent = "…";
+        msg.appendChild(bubble);
+        messagesEl.appendChild(msg);
+        scrollToBottom();
+
+        let reasoningBody = null;
+        function appendThinking(text) {
+          if (!reasoningBody) {
+            const details = document.createElement("details");
+            details.className = "reasoning";
+            details.open = true;
+            const summary = document.createElement("summary");
+            summary.textContent = "Thinking";
+            reasoningBody = document.createElement("div");
+            reasoningBody.className = "body";
+            details.appendChild(summary);
+            details.appendChild(reasoningBody);
+            msg.insertBefore(details, bubble); // above the answer
+          }
+          reasoningBody.textContent += text;
+        }
+        return { bubble, appendThinking };
+      }
+
+      // Render a card for the tools being called. Returns a map of
+      // call id -> result element, so each result can be filled in on arrival.
+      function addToolCard(calls) {
+        const card = document.createElement("div");
+        card.className = "tool";
+        const resultEls = {};
+        for (const c of calls) {
+          const row = document.createElement("div");
+          row.className = "tool-row";
+
+          const name = document.createElement("div");
+          name.className = "tool-name";
+          name.textContent = c.name;
+
+          const args = document.createElement("div");
+          args.className = "tool-args";
+          args.textContent = c.arguments;
+
+          const result = document.createElement("div");
+          result.className = "tool-result pending";
+          result.textContent = "running…";
+
+          row.append(name, args, result);
+          card.appendChild(row);
+          resultEls[c.id] = result;
+        }
+        messagesEl.appendChild(card);
+        scrollToBottom();
+        return resultEls;
+      }
+
+      // --- Composer behaviour ---------------------------------------------
+      function autosize() {
+        inputEl.style.height = "auto";
+        inputEl.style.height = inputEl.scrollHeight + "px";
+      }
+      function refreshSendState() {
+        const ready = inputEl.value.trim().length > 0;
+        sendBtn.disabled = !ready;
+        sendBtn.classList.toggle("ready", ready);
+      }
+      inputEl.addEventListener("input", () => {
+        autosize();
+        refreshSendState();
+      });
+
+      // Placeholder upload affordance — opens a file picker. The backend has no
+      // file support yet, so this is wired up but intentionally a no-op.
+      plusBtn.addEventListener("click", () => {
+        const picker = document.createElement("input");
+        picker.type = "file";
+        picker.multiple = true;
+        picker.click();
+      });
+
+      let movedComposer = false;
+      function enterChatMode() {
+        if (movedComposer) return;
+        movedComposer = true;
+        bodyEl.classList.remove("empty");
+        bodyEl.classList.add("chatting");
+        footerEl.appendChild(composerEl); // relocate from the centered stage
+        inputEl.focus();
+      }
+
+      async function send() {
+        const text = inputEl.value.trim();
+        if (!text) return;
+
+        enterChatMode();
+
+        inputEl.value = "";
+        autosize();
+        refreshSendState();
+        sendBtn.disabled = true;
+
+        addBubble("user", text);
+        history.push({ role: "user", content: text });
+
+        // The conversation can span several assistant turns in one response
+        // (text, then a tool call, then more text…). `cur` is the assistant
+        // bubble for the current turn; `reply` its accumulated text.
+        let cur = addAssistant();
+        let reply = "";
+        const toolResultEls = {}; // call id -> result element, across rounds
+
+        // Close the current assistant turn, recording it in history. Pass the
+        // OpenAI-shaped tool_calls if the turn ended by requesting tools.
+        function finishTurn(toolCalls) {
+          if (toolCalls) {
+            history.push({ role: "assistant", content: reply || null, tool_calls: toolCalls });
+          } else if (reply) {
+            history.push({ role: "assistant", content: reply });
+          }
+          if (reply) cur.bubble.classList.remove("thinking");
+          else cur.bubble.style.display = "none"; // hide the empty "…" placeholder
+        }
+
+        try {
+          const res = await fetch("/api/chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ messages: history }),
+          });
+          if (!res.ok || !res.body) throw new Error("HTTP " + res.status);
+
+          const reader = res.body.getReader();
+          const decoder = new TextDecoder();
+          let buf = "";
+
+          function handle(line) {
+            if (!line.trim()) return;
+            const evt = JSON.parse(line);
+            if (evt.type === "thinking") {
+              cur.appendThinking(evt.text);
+            } else if (evt.type === "content") {
+              if (reply === "") cur.bubble.classList.remove("thinking");
+              reply += evt.text;
+              cur.bubble.textContent = reply;
+            } else if (evt.type === "tool_call") {
+              // This turn requested tools: record it, show the card, then open
+              // a fresh assistant turn for the model's next round.
+              finishTurn(evt.calls.map((c) => ({
+                id: c.id,
+                type: "function",
+                function: { name: c.name, arguments: c.arguments },
+              })));
+              Object.assign(toolResultEls, addToolCard(evt.calls));
+              cur = addAssistant();
+              reply = "";
+            } else if (evt.type === "tool_result") {
+              history.push({ role: "tool", tool_call_id: evt.id, content: evt.text });
+              const el = toolResultEls[evt.id];
+              if (el) {
+                el.textContent = evt.text;
+                el.classList.remove("pending");
+              }
+            }
+            scrollToBottom();
+          }
+
+          while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            buf += decoder.decode(value, { stream: true });
+            const lines = buf.split("\n");
+            buf = lines.pop(); // keep the trailing partial line
+            for (const line of lines) handle(line);
+          }
+          if (buf) handle(buf); // flush any remaining line
+
+          finishTurn(null); // record the final assistant text turn
+        } catch (err) {
+          cur.bubble.classList.remove("thinking");
+          cur.bubble.style.display = "";
+          cur.bubble.textContent = "⚠️ " + err.message;
+        }
+
+        refreshSendState();
+        inputEl.focus();
+      }
+
+      sendBtn.addEventListener("click", send);
+      inputEl.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          send();
+        }
+      });
+
+      // iOS Safari doesn't resize the layout when the keyboard opens — it just
+      // shrinks the visual viewport and scrolls. Pin the body to the visible
+      // height so the composer stays above the keyboard, and keep chat pinned
+      // to the bottom.
+      const vv = window.visualViewport;
+      if (vv) {
+        const fit = () => {
+          document.body.style.height = vv.height + "px";
+          if (bodyEl.classList.contains("chatting")) scrollToBottom();
+        };
+        vv.addEventListener("resize", fit);
+        vv.addEventListener("scroll", fit);
+        fit();
+      }
+    </script>
+  </body>
+</html>
