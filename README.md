@@ -6,7 +6,7 @@ This is a learning project as much as a product. I'm documenting every decision,
 
 ## Status
 
-Early. Model selection done, inference stack benchmarked (16 model × quant combos). Winner picked: `gemma-4-26B-A4B-it` at Q8.
+Early but usable. Model selection and benchmarking are done (16 model × quant combos; winner: `gemma-4-26B-A4B-it` at Q8), and the agent itself runs: a streaming chat backend with a tool loop, a `bash` tool, on-demand skills, long-term memory, and persisted conversations, all behind a single-page web UI.
 
 ## Hardware
 
@@ -24,6 +24,92 @@ NVIDIA DGX Spark — GB10 Grace Blackwell, 128GB unified memory (CPU+GPU).
 |---|---|---|
 | Inference | llama.cpp | Needed for MTP support and full control over the runtime |
 | Model families | Gemma 4, Qwen3.6 | GGUF builds from Unsloth, run via llama.cpp |
+| Backend | FastAPI, Python 3.13, `uv` | Streaming chat, the tool loop, SQLite persistence |
+| Frontend | Single-page HTML/JS | Served by the backend; reads the NDJSON token stream |
+| Packaging | Docker | Agent containerized on the workstation; the model stays on the DGX |
+
+## How the agent works
+
+TORA is a FastAPI backend plus a single-page chat UI. The model runs remotely on
+the DGX (llama.cpp, OpenAI-compatible API); everything else runs in the backend
+on my workstation.
+
+A chat turn flows like this:
+
+1. The frontend posts the conversation to `/api/chat`.
+2. The agent assembles the system prompt — base instructions + live date/time +
+   the current memory and skills listings — and streams a model turn.
+3. If the model calls tools, the agent runs them, feeds the results back, and
+   lets the model continue. This loops until it produces a final answer (capped
+   at 8 tool rounds, so a misbehaving model can't stream forever).
+4. Tokens and tool events stream to the UI as NDJSON; the finished turn is
+   persisted to SQLite so conversations survive a restart.
+
+The system prompt is rebuilt every request and never stored — so edits to it,
+the date, memories, and skills are always live.
+
+Key modules (all under `tora/`):
+
+| Module | Responsibility |
+|---|---|
+| `llm.py` | Talking to the model: streaming turns, parsing tool calls |
+| `agent.py` | The chat/tool loop and system-prompt assembly |
+| `tools/` | The tool registry and individual tools (`bash`, `load_skill`, memory) |
+| `skills.py` | Skill discovery and progressive disclosure |
+| `memory.py` | Long-term memory — durable facts about me |
+| `storage.py` | Conversation persistence (SQLite, one JSON blob per conversation) |
+| `frontmatter.py` | Shared YAML-frontmatter parser for skills and memories |
+| `routes/` | HTTP endpoints (chat, conversations, model) |
+| `web/` | Single-page chat frontend |
+| `config.py` | Settings resolved once from the environment |
+
+### HTTP API
+
+| Method | Path | Purpose |
+|---|---|---|
+| POST | `/api/chat` | Stream a chat turn (NDJSON) |
+| GET | `/api/model` | The currently loaded model id |
+| GET | `/api/conversations` | List saved conversations |
+| POST | `/api/conversations` | Start a new conversation |
+| GET | `/api/conversations/{id}` | Load a conversation |
+| DELETE | `/api/conversations/{id}` | Delete a conversation |
+
+## Tools
+
+The model has a small set of built-in tools, dispatched by the agent loop:
+
+- **`bash`** — runs shell commands on the machine the backend runs on: read and
+  write files, inspect the system, run programs. Guard-railed — commands are
+  parsed with `bashlex` and rejected if any of them names a known-dangerous
+  binary (`rm`, `dd`, `mkfs`, `kill`, `shutdown`, …), and anything the parser
+  can't understand is refused (fail closed). It's a footgun guard, **not** a
+  security sandbox — only enable it on a machine you trust the model to operate.
+- **`load_skill`** — pulls the full instructions for a skill on demand (see
+  [Skills](#skills)).
+- **`remember` / `recall` / `forget`** — long-term memory (see [Memory](#memory)).
+
+## Memory
+
+TORA keeps durable facts about me across conversations — preferences, habits,
+goals, life facts. The model decides what's worth keeping and saves it
+proactively, so I never have to ask it to remember.
+
+- Each memory is a markdown file under `~/.tora/memory/`, with YAML frontmatter
+  (`name`, `created_at`) and the fact as the body. Human-readable and
+  hand-editable — fix or delete a file and the change is live on the next turn
+  (the store re-reads disk every time, nothing is cached).
+- Recall is deliberately simple while the set is small: every memory is injected
+  into the system prompt each turn. `recall` does a keyword search for when the
+  set outgrows that; `forget` drops a fact that's wrong or stale.
+
+```markdown
+---
+name: tomas-is-a-runner
+created_at: 2026-06-02T17:00:00+03:00
+---
+
+Tomas runs regularly and prefers morning runs.
+```
 
 ## Benchmark matrix
 
@@ -77,16 +163,17 @@ More posts coming as the project progresses.
 
 ## Running locally
 
-The agent is a thin FastAPI backend (`server.py`) that proxies to the llama.cpp
-server over the OpenAI protocol and streams tokens back, plus a single-page chat
-frontend (`web/index.html`).
+The agent is a FastAPI backend (the `tora/` package, launched with `uv run tora`)
+that talks to the llama.cpp server over the OpenAI protocol and streams tokens
+back, plus a single-page chat frontend (`tora/web/index.html`).
 
-1. Start `model-server` on the DGX with the chosen model.
+1. Start the llama.cpp server on the DGX with the chosen model (see
+   `serve_model.sh`).
 2. Copy `.env.example` to `.env` and point `TORA_LLM_BASE_URL` at it.
 3. Run the backend:
 
    ```bash
-   uv run server.py
+   uv run tora
    ```
 
 4. Open http://127.0.0.1:8000 and chat.
@@ -114,8 +201,9 @@ Notes:
 - `localhost` / `host.docker.internal` won't work for the model URL — both point
   at the workstation, not the DGX.
 - `~/.tora` is mounted at `/root/.tora` (`TORA_HOME`). The backend reads
-  `~/.tora/.env` for extra config and looks for skills under `~/.tora/skills`.
-  Add `:ro` to the volume in `docker-compose.yml` to mount it read-only.
+  `~/.tora/.env` for extra config, looks for skills under `~/.tora/skills`, and
+  writes memories to `~/.tora/memory`. You can mount it read-only (`:ro` in
+  `docker-compose.yml`), but then the agent can't save new memories.
 
 ## Skills
 
