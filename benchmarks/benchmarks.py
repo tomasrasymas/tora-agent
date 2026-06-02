@@ -773,7 +773,10 @@ TESTS: dict[str, dict] = {
                 "content": "Actually, I changed my mind. My favourite language is now Rust.",
             },
             {"role": "assistant", "content": "Noted — Rust it is!"},
-            {"role": "user", "content": "What is my current favourite programming language?"},
+            {
+                "role": "user",
+                "content": "What is my current favourite programming language?",
+            },
         ],
         "eval": lambda r: "rust" in r["text"].lower(),
         "judge": None,
@@ -1137,7 +1140,9 @@ TESTS: dict[str, dict] = {
             (d := valid_json(r["text"])) is not None
             and isinstance(d.get("languages"), list)
             and len(d["languages"]) >= 3
-            and all(has_keys(l, ["name", "use_case", "typed"]) for l in d["languages"])
+            and all(
+                has_keys(lang, ["name", "use_case", "typed"]) for lang in d["languages"]
+            )
         ),
         "judge": None,
     },
@@ -1228,7 +1233,9 @@ TESTS: dict[str, dict] = {
         },
         "eval": lambda r: (
             (d := valid_json(r["text"])) is not None
-            and has_keys(d, ["title", "datetime", "duration_minutes", "location", "attendees"])
+            and has_keys(
+                d, ["title", "datetime", "duration_minutes", "location", "attendees"]
+            )
             and isinstance(d.get("duration_minutes"), int)
             and d.get("location") is None
             and isinstance(d.get("attendees"), list)

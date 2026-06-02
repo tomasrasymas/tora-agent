@@ -32,9 +32,119 @@
         color: var(--text);
         font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
         display: flex;
-        flex-direction: column;
+        flex-direction: row;
         overflow: hidden;
         -webkit-tap-highlight-color: transparent;
+      }
+
+      /* Layout: a conversations sidebar beside the content column. */
+      #content {
+        flex: 1;
+        min-width: 0;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+      #sidebar {
+        width: 264px;
+        flex-shrink: 0;
+        height: 100%;
+        background: var(--surface);
+        border-right: 1px solid var(--composer-border);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+      #newChat {
+        margin: 12px;
+        padding: 10px 12px;
+        border-radius: 10px;
+        cursor: pointer;
+        background: var(--pill-bg);
+        border: 1px solid var(--pill-border);
+        color: var(--text);
+        font: inherit;
+        font-weight: 600;
+        text-align: left;
+      }
+      #convList {
+        flex: 1;
+        overflow-y: auto;
+        padding: 0 8px 12px;
+      }
+      .conv {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 9px 10px;
+        margin-bottom: 2px;
+        border-radius: 9px;
+        cursor: pointer;
+      }
+      .conv:hover,
+      .conv.active {
+        background: var(--pill-bg);
+      }
+      .conv .meta {
+        flex: 1;
+        min-width: 0;
+      }
+      .conv .t {
+        font-size: 14px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .conv .when {
+        margin-top: 1px;
+        font-size: 11px;
+        color: var(--muted);
+      }
+      .conv .del {
+        border: none;
+        background: none;
+        color: var(--muted);
+        cursor: pointer;
+        font-size: 13px;
+        opacity: 0;
+        flex-shrink: 0;
+      }
+      .conv:hover .del {
+        opacity: 1;
+      }
+      #sidebarToggle {
+        display: none;
+        position: fixed;
+        top: 10px;
+        left: 10px;
+        z-index: 30;
+        width: 38px;
+        height: 38px;
+        border-radius: 9px;
+        background: var(--surface);
+        border: 1px solid var(--composer-border);
+        color: var(--text);
+        cursor: pointer;
+        align-items: center;
+        justify-content: center;
+      }
+      @media (max-width: 720px) {
+        #sidebar {
+          position: fixed;
+          left: 0;
+          top: 0;
+          bottom: 0;
+          z-index: 25;
+          transform: translateX(-100%);
+          transition: transform 0.2s ease;
+        }
+        body.sidebar-open #sidebar {
+          transform: translateX(0);
+        }
+        #sidebarToggle {
+          display: flex;
+        }
       }
 
       /* Scroll region: holds the centered empty-state stage, and once chatting,
@@ -98,6 +208,37 @@
       .msg.assistant .bubble { max-width: 100%; }
       .msg.assistant .bubble.thinking { color: var(--muted); }
 
+      /* Rendered markdown (assistant answers). */
+      .bubble.md { white-space: normal; }
+      .bubble.md > :first-child { margin-top: 0; }
+      .bubble.md > :last-child { margin-bottom: 0; }
+      .bubble.md p { margin: 0 0 0.7em; }
+      .bubble.md h1, .bubble.md h2, .bubble.md h3,
+      .bubble.md h4, .bubble.md h5, .bubble.md h6 {
+        margin: 0.8em 0 0.35em; line-height: 1.25;
+      }
+      .bubble.md ul, .bubble.md ol { margin: 0.3em 0 0.7em; padding-left: 1.4em; }
+      .bubble.md li { margin: 0.15em 0; }
+      .bubble.md code {
+        background: var(--pill-bg);
+        padding: 0.1em 0.35em; border-radius: 5px;
+        font-size: 0.9em; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+      .bubble.md pre {
+        background: var(--surface); border: 1px solid var(--composer-border);
+        padding: 0.75em 0.9em; border-radius: 10px; overflow-x: auto;
+      }
+      .bubble.md pre code { background: none; padding: 0; font-size: 0.85em; }
+      .bubble.md a { color: var(--accent); text-decoration: underline; }
+      .bubble.md table {
+        border-collapse: collapse; margin: 0.5em 0; max-width: 100%;
+      }
+      .bubble.md th, .bubble.md td {
+        border: 1px solid var(--composer-border);
+        padding: 0.45em 0.7em; text-align: left; vertical-align: top;
+      }
+      .bubble.md th { background: var(--pill-bg); font-weight: 600; }
+
       .reasoning {
         max-width: 100%;
         margin-bottom: 10px;
@@ -133,6 +274,20 @@
         overflow: hidden;
         font-size: 13px;
       }
+      .tool > summary {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 8px 14px;
+        font-weight: 600;
+        cursor: pointer;
+        user-select: none;
+        list-style: none;
+      }
+      .tool > summary::-webkit-details-marker { display: none; }
+      .tool > summary::before { content: "🔧 ▸"; font-weight: 400; }
+      .tool[open] > summary::before { content: "🔧 ▾"; }
+      .tool[open] > summary { border-bottom: 1px solid var(--composer-border); }
       .tool-row { padding: 8px 14px; }
       .tool-row + .tool-row { border-top: 1px solid var(--composer-border); }
       .tool-name {
@@ -264,11 +419,16 @@
     </style>
   </head>
   <body class="empty">
+    <aside id="sidebar">
+      <button id="newChat">+ New chat</button>
+      <div id="convList"></div>
+    </aside>
+    <button id="sidebarToggle" aria-label="Toggle chats">☰</button>
+    <div id="content">
     <main id="scroller">
       <div class="stage" id="stage">
         <div id="hero">
-          <h1>Hey, <span class="accent">athlete</span></h1>
-          <p>Your personal assistant for training, nutrition &amp; supplements</p>
+          <h1>Hey, <span class="accent">Tomas</span></h1>
         </div>
 
         <!-- The composer lives here while empty; JS relocates it to <footer>
@@ -298,6 +458,7 @@
     </main>
 
     <footer id="footer"></footer>
+    </div>
 
     <script>
       const bodyEl = document.body;
@@ -309,9 +470,13 @@
       const sendBtn = document.getElementById("send");
       const plusBtn = document.getElementById("plus");
       const modelBadge = document.getElementById("modelBadge");
+      const convListEl = document.getElementById("convList");
+      const newChatBtn = document.getElementById("newChat");
+      const sidebarToggle = document.getElementById("sidebarToggle");
+      const stageEl = document.getElementById("stage");
 
-      // Full conversation history sent to the backend each turn.
-      const history = [];
+      // The backend owns history; the frontend tracks only the current chat id.
+      let currentConversationId = null;
 
       function scrollToBottom() {
         scrollerEl.scrollTop = scrollerEl.scrollHeight;
@@ -351,6 +516,115 @@
         .then((d) => renderBadge(d.id))
         .catch(() => {});
 
+      // --- Markdown rendering ---------------------------------------------
+      // A small, dependency-free renderer (no CDN — the app is self-hosted).
+      // It escapes HTML *first*, then applies a limited set of markdown rules,
+      // so model output can never inject scripts/markup (XSS-safe).
+      function escapeHtml(s) {
+        return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      }
+      function renderInline(s) {
+        // `s` is already HTML-escaped.
+        return s
+          .replace(/`([^`]+)`/g, (_, c) => "<code>" + c + "</code>")
+          .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+          .replace(/__([^_]+)__/g, "<strong>$1</strong>")
+          .replace(/\*([^*\n]+)\*/g, "<em>$1</em>")
+          // links: only http(s) (never javascript:), no quotes in the URL.
+          .replace(
+            /\[([^\]]+)\]\((https?:\/\/[^\s)"]+)\)/g,
+            '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>'
+          );
+      }
+      function isTableSep(l) {
+        return /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)+\|?\s*$/.test(l);
+      }
+      function splitRow(l) {
+        let t = l.trim();
+        if (t.startsWith("|")) t = t.slice(1);
+        if (t.endsWith("|")) t = t.slice(0, -1);
+        return t.split("|").map((c) => c.trim());
+      }
+      function isBlockStart(l, next) {
+        return (
+          /^\s*```/.test(l) ||
+          /^#{1,6}\s+/.test(l) ||
+          /^\s*[-*+]\s+/.test(l) ||
+          /^\s*\d+\.\s+/.test(l) ||
+          (l.includes("|") && next !== undefined && isTableSep(next))
+        );
+      }
+      function renderMarkdown(src) {
+        const lines = src.replace(/\r\n?/g, "\n").split("\n");
+        let html = "";
+        let i = 0;
+        while (i < lines.length) {
+          const line = lines[i];
+          if (!line.trim()) { i++; continue; }
+
+          // fenced code block
+          if (/^\s*```/.test(line)) {
+            i++;
+            const code = [];
+            while (i < lines.length && !/^\s*```/.test(lines[i])) code.push(lines[i++]);
+            i++; // closing fence
+            html += "<pre><code>" + escapeHtml(code.join("\n")) + "</code></pre>";
+            continue;
+          }
+          // heading
+          const h = line.match(/^(#{1,6})\s+(.*)$/);
+          if (h) {
+            const n = h[1].length;
+            html += "<h" + n + ">" + renderInline(escapeHtml(h[2].trim())) + "</h" + n + ">";
+            i++;
+            continue;
+          }
+          // table
+          if (line.includes("|") && isTableSep(lines[i + 1] || "")) {
+            const header = splitRow(line);
+            i += 2;
+            const rows = [];
+            while (i < lines.length && lines[i].includes("|") && lines[i].trim()) {
+              rows.push(splitRow(lines[i++]));
+            }
+            let t = "<table><thead><tr>";
+            for (const c of header) t += "<th>" + renderInline(escapeHtml(c)) + "</th>";
+            t += "</tr></thead><tbody>";
+            for (const r of rows) {
+              t += "<tr>";
+              for (let k = 0; k < header.length; k++) {
+                t += "<td>" + renderInline(escapeHtml(r[k] || "")) + "</td>";
+              }
+              t += "</tr>";
+            }
+            html += t + "</tbody></table>";
+            continue;
+          }
+          // unordered / ordered list
+          const ul = /^\s*[-*+]\s+/, ol = /^\s*\d+\.\s+/;
+          if (ul.test(line) || ol.test(line)) {
+            const ordered = ol.test(line);
+            const re = ordered ? ol : ul;
+            const items = [];
+            while (i < lines.length && re.test(lines[i])) {
+              items.push(renderInline(escapeHtml(lines[i].replace(re, ""))));
+              i++;
+            }
+            const tag = ordered ? "ol" : "ul";
+            html += "<" + tag + "><li>" + items.join("</li><li>") + "</li></" + tag + ">";
+            continue;
+          }
+          // paragraph (consecutive lines until a blank line or a new block)
+          const para = [];
+          while (i < lines.length && lines[i].trim() && !isBlockStart(lines[i], lines[i + 1])) {
+            para.push(renderInline(escapeHtml(lines[i])));
+            i++;
+          }
+          html += "<p>" + para.join("<br>") + "</p>";
+        }
+        return html;
+      }
+
       // --- Message rendering ----------------------------------------------
       function addBubble(role, text) {
         const msg = document.createElement("div");
@@ -381,7 +655,7 @@
           if (!reasoningBody) {
             const details = document.createElement("details");
             details.className = "reasoning";
-            details.open = true;
+            details.open = false; // collapsed by default
             const summary = document.createElement("summary");
             summary.textContent = "Thinking";
             reasoningBody = document.createElement("div");
@@ -398,8 +672,11 @@
       // Render a card for the tools being called. Returns a map of
       // call id -> result element, so each result can be filled in on arrival.
       function addToolCard(calls) {
-        const card = document.createElement("div");
-        card.className = "tool";
+        const card = document.createElement("details");
+        card.className = "tool"; // collapsed by default (no `open` attribute)
+        const summary = document.createElement("summary");
+        summary.textContent = calls.map((c) => c.name).join(", ");
+        card.appendChild(summary);
         const resultEls = {};
         for (const c of calls) {
           const row = document.createElement("div");
@@ -460,6 +737,137 @@
         inputEl.focus();
       }
 
+      // --- Conversations (backend-owned history) --------------------------
+      function closeSidebarMobile() {
+        bodyEl.classList.remove("sidebar-open");
+      }
+
+      // Unix seconds -> short local date+time, e.g. "Jun 2, 10:49 AM".
+      function formatWhen(ts) {
+        return new Date(ts * 1000).toLocaleString([], {
+          month: "short",
+          day: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+        });
+      }
+
+      async function loadConversationList() {
+        const list = await fetch("/api/conversations")
+          .then((r) => r.json())
+          .catch(() => []);
+        convListEl.innerHTML = "";
+        for (const c of list) {
+          const row = document.createElement("div");
+          row.className = "conv" + (c.id === currentConversationId ? " active" : "");
+
+          const meta = document.createElement("div");
+          meta.className = "meta";
+          meta.addEventListener("click", () => openConversation(c.id));
+
+          const t = document.createElement("div");
+          t.className = "t";
+          t.textContent = c.title || "New chat";
+
+          const when = document.createElement("div");
+          when.className = "when";
+          when.textContent = formatWhen(c.created_at);
+
+          meta.append(t, when);
+
+          const del = document.createElement("button");
+          del.className = "del";
+          del.textContent = "🗑";
+          del.title = "Delete chat";
+          del.addEventListener("click", (e) => {
+            e.stopPropagation();
+            deleteConversation(c.id);
+          });
+
+          row.append(meta, del);
+          convListEl.appendChild(row);
+        }
+      }
+
+      async function ensureConversation() {
+        if (currentConversationId) return;
+        const d = await fetch("/api/conversations", { method: "POST" }).then((r) => r.json());
+        currentConversationId = d.id;
+        localStorage.setItem("tora.cid", d.id);
+      }
+
+      function newChat() {
+        currentConversationId = null;
+        localStorage.removeItem("tora.cid");
+        messagesEl.innerHTML = "";
+        bodyEl.classList.remove("chatting");
+        bodyEl.classList.add("empty");
+        if (movedComposer) {
+          stageEl.appendChild(composerEl); // move the composer back to center
+          movedComposer = false;
+        }
+        loadConversationList();
+        closeSidebarMobile();
+        inputEl.focus();
+      }
+
+      async function openConversation(id) {
+        const res = await fetch("/api/conversations/" + id);
+        if (!res.ok) {
+          localStorage.removeItem("tora.cid"); // stale id (e.g. deleted)
+          return;
+        }
+        const data = await res.json();
+        currentConversationId = id;
+        localStorage.setItem("tora.cid", id);
+        messagesEl.innerHTML = "";
+        enterChatMode();
+        renderMessages(data.messages);
+        loadConversationList(); // refresh active highlight
+        closeSidebarMobile();
+      }
+
+      async function deleteConversation(id) {
+        await fetch("/api/conversations/" + id, { method: "DELETE" });
+        if (id === currentConversationId) newChat();
+        else loadConversationList();
+      }
+
+      // Render a stored conversation: pair each assistant tool_call with its
+      // tool result (from the `tool` messages) so the cards show their output.
+      function renderMessages(messages) {
+        const toolResults = {};
+        for (const m of messages) {
+          if (m.role === "tool") toolResults[m.tool_call_id] = m.content;
+        }
+        for (const m of messages) {
+          if (m.role === "user") {
+            addBubble("user", m.content || "");
+          } else if (m.role === "assistant") {
+            if (m.content) {
+              const b = addBubble("assistant", "");
+              b.classList.add("md");
+              b.innerHTML = renderMarkdown(m.content);
+            }
+            if (m.tool_calls && m.tool_calls.length) {
+              const calls = m.tool_calls.map((tc) => ({
+                id: tc.id,
+                name: tc.function.name,
+                arguments: tc.function.arguments,
+              }));
+              const els = addToolCard(calls);
+              for (const c of calls) {
+                if (els[c.id] && toolResults[c.id] !== undefined) {
+                  els[c.id].textContent = toolResults[c.id];
+                  els[c.id].classList.remove("pending");
+                }
+              }
+            }
+          }
+        }
+        scrollToBottom();
+      }
+
       async function send() {
         const text = inputEl.value.trim();
         if (!text) return;
@@ -471,33 +879,31 @@
         refreshSendState();
         sendBtn.disabled = true;
 
-        addBubble("user", text);
-        history.push({ role: "user", content: text });
+        await ensureConversation();
 
-        // The conversation can span several assistant turns in one response
-        // (text, then a tool call, then more text…). `cur` is the assistant
-        // bubble for the current turn; `reply` its accumulated text.
+        addBubble("user", text);
+
+        // A response can span several turns (text, a tool call, more text…).
+        // `cur` is the assistant bubble for the current turn; `reply` its text.
         let cur = addAssistant();
         let reply = "";
         const toolResultEls = {}; // call id -> result element, across rounds
 
-        // Close the current assistant turn, recording it in history. Pass the
-        // OpenAI-shaped tool_calls if the turn ended by requesting tools.
-        function finishTurn(toolCalls) {
-          if (toolCalls) {
-            history.push({ role: "assistant", content: reply || null, tool_calls: toolCalls });
-          } else if (reply) {
-            history.push({ role: "assistant", content: reply });
-          }
+        // Tidy the current assistant bubble: drop the spinner, or hide it if the
+        // turn produced no text (e.g. it only made a tool call).
+        function closeBubble() {
           if (reply) cur.bubble.classList.remove("thinking");
-          else cur.bubble.style.display = "none"; // hide the empty "…" placeholder
+          else cur.bubble.style.display = "none";
         }
 
         try {
           const res = await fetch("/api/chat", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ messages: history }),
+            body: JSON.stringify({
+              conversation_id: currentConversationId,
+              message: { role: "user", content: text },
+            }),
           });
           if (!res.ok || !res.body) throw new Error("HTTP " + res.status);
 
@@ -513,20 +919,16 @@
             } else if (evt.type === "content") {
               if (reply === "") cur.bubble.classList.remove("thinking");
               reply += evt.text;
-              cur.bubble.textContent = reply;
+              cur.bubble.classList.add("md");
+              cur.bubble.innerHTML = renderMarkdown(reply);
             } else if (evt.type === "tool_call") {
-              // This turn requested tools: record it, show the card, then open
-              // a fresh assistant turn for the model's next round.
-              finishTurn(evt.calls.map((c) => ({
-                id: c.id,
-                type: "function",
-                function: { name: c.name, arguments: c.arguments },
-              })));
+              // This turn requested tools: show the card, then open a fresh
+              // assistant turn for the model's next round.
+              closeBubble();
               Object.assign(toolResultEls, addToolCard(evt.calls));
               cur = addAssistant();
               reply = "";
             } else if (evt.type === "tool_result") {
-              history.push({ role: "tool", tool_call_id: evt.id, content: evt.text });
               const el = toolResultEls[evt.id];
               if (el) {
                 el.textContent = evt.text;
@@ -546,7 +948,8 @@
           }
           if (buf) handle(buf); // flush any remaining line
 
-          finishTurn(null); // record the final assistant text turn
+          closeBubble(); // tidy the final assistant turn
+          loadConversationList(); // title/order may have changed (backend saved)
         } catch (err) {
           cur.bubble.classList.remove("thinking");
           cur.bubble.style.display = "";
@@ -564,6 +967,16 @@
           send();
         }
       });
+
+      newChatBtn.addEventListener("click", newChat);
+      sidebarToggle.addEventListener("click", () =>
+        bodyEl.classList.toggle("sidebar-open")
+      );
+
+      // On load: populate the sidebar and resume the last conversation, if any.
+      loadConversationList();
+      const savedId = localStorage.getItem("tora.cid");
+      if (savedId) openConversation(savedId);
 
       // iOS Safari doesn't resize the layout when the keyboard opens — it just
       // shrinks the visual viewport and scrolls. Pin the body to the visible

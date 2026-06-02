@@ -116,3 +116,57 @@ Notes:
 - `~/.tora` is mounted at `/root/.tora` (`TORA_HOME`). The backend reads
   `~/.tora/.env` for extra config and looks for skills under `~/.tora/skills`.
   Add `:ro` to the volume in `docker-compose.yml` to mount it read-only.
+
+## Skills
+
+A *skill* is a focused set of instructions for a specific task. Skills are
+discovered from two roots, low→high precedence, so a user skill overrides a
+built-in one of the same name:
+
+- **System skills**: shipped in the package at `tora/skills/`.
+- **User skills**: dropped into `~/.tora/skills/` (the Docker bind mount), no
+  rebuild needed.
+
+Each skill is a folder containing a `SKILL.md`: YAML frontmatter plus a markdown
+body of instructions.
+
+```
+~/.tora/skills/
+  my-skill/
+    SKILL.md            # frontmatter (name, description) + instructions
+    reference/run.py    # optional supporting files
+```
+
+```markdown
+---
+name: my-skill          # optional; defaults to the folder name
+description: One line the model uses to decide when to apply this skill.
+---
+
+# My skill
+
+Step-by-step instructions go here…
+```
+
+Only each skill's name + description are shown to the model up front; it calls
+the `load_skill` tool to pull the full body when a request matches (progressive
+disclosure). `load_skill` also returns the skill's absolute `directory`, so
+**reference bundled files by relative path** (e.g. `reference/run.py`) — the
+model reads or runs them under that directory via the bash tool. A malformed
+skill (bad frontmatter, missing `description`) is skipped with a warning, never
+crashing startup.
+
+## Development
+
+Install the git pre-commit hooks once after cloning:
+
+```bash
+uv run pre-commit install
+```
+
+They run on every commit (ruff lint + format, file hygiene, and gitleaks secret
+scanning). To run them across the whole repo on demand:
+
+```bash
+uv run pre-commit run --all-files
+```

@@ -1,0 +1,36 @@
+# Pre-commit hooks. Install once with `uv run pre-commit install`.
+# Run on demand with `uv run pre-commit run --all-files`.
+#
+# Keep this fast: only quick, auto-fixing checks belong here. The full test
+# suite and anything slow belongs in CI, which should also re-run these hooks
+# so they're enforced (local hooks are opt-in and can be skipped).
+repos:
+  # Ruff: lint (with autofix) + format. Pinned to match the dev dependency in
+  # pyproject.toml (ruff 0.15.14) so the hook and `uv run ruff` never disagree.
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.14
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+      - id: ruff-format
+
+  # Cheap, high-signal file hygiene checks.
+  # Generated benchmark artifacts aren't hand-edited source — don't churn them.
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: ^benchmarks/results/
+      - id: end-of-file-fixer
+        exclude: ^benchmarks/results/
+      - id: check-yaml
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+      - id: debug-statements # catches stray breakpoint()/pdb
+
+  # Secret scanning: stop API keys/tokens from being committed.
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.21.2
+    hooks:
+      - id: gitleaks

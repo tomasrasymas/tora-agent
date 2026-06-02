@@ -1,0 +1,25 @@
+services:
+  tora:
+    build: .
+    image: tora-agent:latest
+    container_name: tora-agent
+    restart: unless-stopped
+    ports:
+      - "8888:8888"
+    environment:
+      # OpenAI-compatible llama.cpp server on the DGX Spark.
+      # NOTE: a `.local` (mDNS) hostname usually does NOT resolve from inside a
+      # Linux container. Prefer the DGX's IP here, or add an `extra_hosts` entry
+      # below mapping the hostname to its IP.
+      TORA_LLM_BASE_URL: "${TORA_LLM_BASE_URL:-http://spark-60bd.local:8033/v1}"
+      TORA_HOST: "0.0.0.0"
+      TORA_PORT: "8888"
+      # Mount point of the host's ~/.tora inside the container (see volumes).
+      TORA_HOME: "/root/.tora"
+    volumes:
+      # Map the host's ~/.tora (with all subfolders, e.g. skills/) into the
+      # container. Read-write so the app can create skills_dir if missing.
+      - "${HOME}/.tora:/root/.tora"
+    # If you must use the `spark-60bd.local` hostname, uncomment and set the IP:
+    # extra_hosts:
+    #   - "spark-60bd.local:192.168.x.y"

@@ -8,9 +8,15 @@ A thin FastAPI app that:
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
+from .agent import Agent
 from .config import Settings, load_settings
 from .llm import LLMClient
-from .routes import create_chat_router, create_model_router
+from .routes import (
+    create_chat_router,
+    create_conversations_router,
+    create_model_router,
+)
+from .storage import Storage
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -24,8 +30,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(title="TORA agent")
 
+    store = Storage(settings.db_path)
     llm = LLMClient(settings.llm_base_url)
-    app.include_router(create_chat_router(llm))
+    agent = Agent(llm)
+    app.include_router(create_chat_router(agent, store))
+    app.include_router(create_conversations_router(store))
     app.include_router(create_model_router(llm))
 
     # Mounted last so the API routes above take precedence over "/".

@@ -23,9 +23,35 @@ class Message(BaseModel):
 
 
 class Messages(BaseModel):
-    """Body of POST /api/chat — the full conversation so far."""
+    """A conversation's messages — the body of GET /api/conversations/{id}."""
 
     messages: list[Message]
+
+
+class ChatRequest(BaseModel):
+    """Body of POST /api/chat — the conversation to append to and the new turn.
+
+    The backend owns history: it loads the conversation's prior messages, so the
+    client only sends the new user message plus which conversation it belongs to.
+    """
+
+    conversation_id: str
+    message: Message
+
+
+class ConversationInfo(BaseModel):
+    """A conversation summary for the sidebar list."""
+
+    id: str
+    title: str
+    created_at: float  # when the conversation was started
+    updated_at: float
+
+
+class NewConversation(BaseModel):
+    """Response of POST /api/conversations."""
+
+    id: str
 
 
 class EventType(str, Enum):
