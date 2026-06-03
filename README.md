@@ -176,7 +176,7 @@ back, plus a single-page chat frontend (`tora/web/index.html`).
    uv run tora
    ```
 
-4. Open http://127.0.0.1:8000 and chat.
+4. Open http://127.0.0.1:8888 and chat.
 
 ## Running in Docker
 
@@ -194,7 +194,7 @@ TORA_LLM_BASE_URL=http://<dgx-ip>:8033/v1 docker compose up --build
 
 Or set `TORA_LLM_BASE_URL=http://<dgx-ip>:8033/v1` in `.env` (compose loads it
 automatically) and just run `docker compose up --build`. Then open
-http://127.0.0.1:8000.
+http://127.0.0.1:8888.
 
 Notes:
 

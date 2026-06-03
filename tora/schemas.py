@@ -37,6 +37,7 @@ class ChatRequest(BaseModel):
 
     conversation_id: str
     message: Message
+    thinking: bool = False  # when True, ask the model to emit reasoning first
 
 
 class ConversationInfo(BaseModel):
@@ -61,12 +62,14 @@ class EventType(str, Enum):
     - ``content``      — answer tokens
     - ``tool_call``    — tools the model decided to call this turn
     - ``tool_result``  — the result of running one tool
+    - ``usage``        — token counts for the turn (live context meter)
     """
 
     THINKING = "thinking"
     CONTENT = "content"
     TOOL_CALL = "tool_call"
     TOOL_RESULT = "tool_result"
+    USAGE = "usage"
 
 
 class StreamEvent(BaseModel):
@@ -82,6 +85,8 @@ class StreamEvent(BaseModel):
     calls: list[dict] | None = None  # tool_call: [{id, name, arguments}, ...]
     id: str | None = None  # tool_result: which call it answers
     name: str | None = None  # tool_result: the tool's name
+    prompt_tokens: int | None = None  # usage: tokens in the prompt sent this turn
+    total_tokens: int | None = None  # usage: prompt + completion tokens
 
     def to_ndjson(self) -> str:
         """Serialize as a single newline-terminated JSON line."""

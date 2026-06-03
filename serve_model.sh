@@ -13,7 +13,7 @@ llama-server \
   --port 8033 \
   --n-gpu-layers 99 \
   --flash-attn on \
-  --parallel 4 \
+  --parallel 1 \
   --ctx-size 131072 \
   --cache-reuse 256 \
   --threads 10 \

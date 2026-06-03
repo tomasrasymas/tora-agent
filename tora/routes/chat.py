@@ -34,7 +34,7 @@ def create_chat_router(agent: Agent, store: Storage) -> APIRouter:
             # `yield from` forwards the agent's NDJSON events and captures its
             # return value (the new assistant/tool messages). We persist once the
             # stream is fully consumed.
-            new_messages = yield from agent.stream_chat(models)
+            new_messages = yield from agent.stream_chat(models, thinking=body.thinking)
             store.save(body.conversation_id, history + new_messages)
 
         return StreamingResponse(stream(), media_type="application/x-ndjson")

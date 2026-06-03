@@ -4,6 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>TORA · Personal Assistant</title>
+    <link rel="icon" type="image/png" href="/favicon.png" />
     <style>
       :root {
         --bg: #0e0f12;
@@ -372,6 +373,31 @@
       }
       .icon-btn:active { transform: scale(0.96); }
 
+      /* Thinking toggle — a pill that lights up with the accent when enabled. */
+      .toggle-pill {
+        flex-shrink: 0;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        height: 36px;
+        padding: 0 14px;
+        border-radius: 18px;
+        border: 1px solid var(--composer-border);
+        background: var(--surface);
+        color: var(--muted);
+        font: inherit;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        touch-action: manipulation;
+      }
+      .toggle-pill:active { transform: scale(0.96); }
+      .toggle-pill[aria-pressed="true"] {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: var(--accent-text);
+      }
+
       .send-btn {
         flex-shrink: 0;
         width: 36px;
@@ -416,6 +442,23 @@
         font-size: 12px;
         white-space: nowrap;
       }
+
+      /* Live context meter: how many tokens the conversation currently uses. */
+      .token-meter {
+        flex-shrink: 0;
+        padding: 5px 10px;
+        border-radius: 12px;
+        background: var(--surface);
+        border: 1px solid var(--composer-border);
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 12px;
+        color: var(--muted);
+        white-space: nowrap;
+      }
+      .token-meter.warn {
+        color: var(--accent);
+        border-color: var(--accent);
+      }
     </style>
   </head>
   <body class="empty">
@@ -442,8 +485,13 @@
                 <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
               </svg>
             </button>
+            <button class="toggle-pill" id="thinkToggle" type="button"
+                    aria-pressed="false" title="Let the model reason before answering">
+              💭 Think
+            </button>
             <span class="spacer"></span>
             <span class="badge" id="modelBadge" style="display:none"></span>
+            <span class="token-meter" id="tokenMeter" title="Conversation tokens used / context window" style="display:none"></span>
             <button class="send-btn" id="send" title="Send" aria-label="Send" disabled>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                    stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
@@ -469,7 +517,9 @@
       const inputEl = document.getElementById("input");
       const sendBtn = document.getElementById("send");
       const plusBtn = document.getElementById("plus");
+      const thinkToggle = document.getElementById("thinkToggle");
       const modelBadge = document.getElementById("modelBadge");
+      const tokenMeter = document.getElementById("tokenMeter");
       const convListEl = document.getElementById("convList");
       const newChatBtn = document.getElementById("newChat");
       const sidebarToggle = document.getElementById("sidebarToggle");
@@ -511,9 +561,29 @@
         modelBadge.style.display = "inline-flex";
       }
 
+      // --- Context token meter --------------------------------------------
+      // The backend reports the conversation's exact prompt-token count (from
+      // the model) after each turn via a `usage` event; we show it against the
+      // model's context window so it's clear how much room is left.
+      let contextWindow = 0;
+
+      function fmtTokens(n) {
+        if (n >= 1000) return (n / 1000).toFixed(n >= 10000 ? 0 : 1) + "K";
+        return String(n);
+      }
+      function renderTokenMeter(used) {
+        if (!contextWindow) return;
+        tokenMeter.textContent = fmtTokens(used) + " / " + fmtTokens(contextWindow);
+        tokenMeter.classList.toggle("warn", used / contextWindow >= 0.8);
+        tokenMeter.style.display = "inline-flex";
+      }
+
       fetch("/api/model")
         .then((r) => r.json())
-        .then((d) => renderBadge(d.id))
+        .then((d) => {
+          renderBadge(d.id);
+          contextWindow = d.context_window || 0;
+        })
         .catch(() => {});
 
       // --- Markdown rendering ---------------------------------------------
@@ -727,6 +797,17 @@
         picker.click();
       });
 
+      // Thinking toggle — persisted so the choice sticks across reloads. The
+      // flag is read fresh on each send() and passed to the backend.
+      function setThinking(on) {
+        thinkToggle.setAttribute("aria-pressed", on ? "true" : "false");
+        localStorage.setItem("tora.think", on ? "1" : "0");
+      }
+      setThinking(localStorage.getItem("tora.think") === "1");
+      thinkToggle.addEventListener("click", () => {
+        setThinking(thinkToggle.getAttribute("aria-pressed") !== "true");
+      });
+
       let movedComposer = false;
       function enterChatMode() {
         if (movedComposer) return;
@@ -903,6 +984,7 @@
             body: JSON.stringify({
               conversation_id: currentConversationId,
               message: { role: "user", content: text },
+              thinking: thinkToggle.getAttribute("aria-pressed") === "true",
             }),
           });
           if (!res.ok || !res.body) throw new Error("HTTP " + res.status);
@@ -934,6 +1016,9 @@
                 el.textContent = evt.text;
                 el.classList.remove("pending");
               }
+            } else if (evt.type === "usage") {
+              // prompt_tokens = the whole conversation as sent this turn.
+              renderTokenMeter(evt.prompt_tokens);
             }
             scrollToBottom();
           }

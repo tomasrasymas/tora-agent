@@ -53,6 +53,37 @@ of you runs on separate device (DGX Spark).
 """
 
 
+def _estimate_tokens(messages: list[dict]) -> int:
+    """Rough token estimate (~4 chars/token) over the serialized messages.
+
+    Used only to decide *when* to trim history before a request — the exact
+    count comes back from the model as a usage event afterwards. Deliberately
+    cheap (no tokenizer round-trip) and slightly conservative.
+    """
+    chars = sum(len(json.dumps(m, ensure_ascii=False)) for m in messages)
+    return chars // 4
+
+
+def trim_to_budget(messages: list[dict], max_tokens: int) -> list[dict]:
+    """Drop the oldest turns until the history fits ``max_tokens``.
+
+    Truncation only ever happens at a user message — the start of a turn — so we
+    never orphan a tool result or leave an assistant ``tool_calls`` message
+    without the tool outputs that answer it (a shape the model API rejects).
+    Keeps the largest such suffix that fits; if even the last user turn is over
+    budget, keeps that turn anyway (better than sending nothing — let the model
+    server deal with it, and lean on the memory system / summarization later).
+    """
+    if _estimate_tokens(messages) <= max_tokens:
+        return messages
+    # User messages are the only safe truncation boundaries.
+    user_starts = [i for i, m in enumerate(messages) if m.get("role") == "user"]
+    for start in user_starts:  # earliest boundary that fits wins (keeps the most)
+        if _estimate_tokens(messages[start:]) <= max_tokens:
+            return messages[start:]
+    return messages[user_starts[-1] :] if user_starts else messages
+
+
 def build_system_prompt() -> str:
     """Assemble the full system prompt for one request.
 
@@ -77,17 +108,25 @@ class Agent:
     # (or loops on a failing one) can't stream forever.
     MAX_TOOL_ROUNDS = 8
 
+    # Fraction of the model's context window to fill with the system prompt +
+    # history, leaving headroom for the model's reply, this request's tool
+    # rounds, and slack in the token estimate.
+    CONTEXT_BUDGET = 0.7
+
     def __init__(self, llm: LLMClient) -> None:
         self._llm = llm
         self._tools = registry
 
-    def stream_chat(self, messages: list[Message]) -> Generator[str, None, list[dict]]:
+    def stream_chat(
+        self, messages: list[Message], thinking: bool = False
+    ) -> Generator[str, None, list[dict]]:
         """Stream a chat completion as NDJSON, running tools as the model asks.
 
         ``messages`` is the conversation so far (loaded from storage by the
         caller). Each loop iteration is one model turn — if it requests tool
         calls, we run them, append the results, and let it respond again, up to
-        ``MAX_TOOL_ROUNDS``.
+        ``MAX_TOOL_ROUNDS``. ``thinking`` enables the model's reasoning step for
+        every turn of this request.
 
         *Returns* (via ``return``, captured by ``yield from``) the list of new
         messages produced this request — the assistant turn(s) and any tool
@@ -98,14 +137,22 @@ class Agent:
         new_messages: list[dict] = []
         try:
             # The system prompt is injected here each request — it's not stored.
-            conversation = [
-                {"role": "system", "content": build_system_prompt()},
-                *(m.model_dump(exclude_none=True) for m in messages),
-            ]
+            system = build_system_prompt()
+            history = [m.model_dump(exclude_none=True) for m in messages]
+
+            # Keep the prompt within the model's context window: the system
+            # prompt is always kept; trim the oldest turns from history to fit.
+            window = self._llm.context_window()
+            budget = int(window * self.CONTEXT_BUDGET) - _estimate_tokens(
+                [{"role": "system", "content": system}]
+            )
+            history = trim_to_budget(history, budget)
+
+            conversation = [{"role": "system", "content": system}, *history]
 
             for round_num in range(self.MAX_TOOL_ROUNDS + 1):
                 content, tool_calls = yield from self._llm.stream_turn(
-                    conversation, self._tools.schemas
+                    conversation, self._tools.schemas, thinking=thinking
                 )
 
                 # Only complete calls (id + name present) are runnable.

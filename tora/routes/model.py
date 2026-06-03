@@ -15,9 +15,13 @@ def create_model_router(llm: LLMClient) -> APIRouter:
     router = APIRouter(prefix="/api")
 
     @router.get("/model")
-    def model() -> dict[str, str]:
-        """Return the loaded model id so the frontend can render its badge."""
+    def model() -> dict:
+        """Return the loaded model id and context window for the frontend.
 
-        return {"id": llm.model_id()}
+        ``context_window`` is the per-conversation token budget; the UI uses it
+        as the denominator of the live token meter.
+        """
+
+        return {"id": llm.model_id(), "context_window": llm.context_window()}
 
     return router
