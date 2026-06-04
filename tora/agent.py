@@ -12,45 +12,19 @@ handles *what to do with the conversation*.
 import json
 from collections.abc import Generator, Iterator
 from datetime import datetime
+from pathlib import Path
 
 from . import memory, skills
 from .llm import LLMClient, ToolCall
 from .schemas import EventType, Message, StreamEvent
 from .tools import registry
 
-SYSTEM_PROMPT = """\
-You are TORA, a personal AI assistant for Tomas. You help him manage the \
-everyday details — things like supplements schedule, reminding things, \
-helping on day-to-day tasks — using your built-in tools.
-
-Help Tomas get things done and answer what he ask, rather than pushing advice he \
-didn't request. Be concise, practical, and friendly. Use the available tools \
-when they help, and when a request is missing detail your need, ask one brief \
-clarifying question first.
-
-Besids tools you have access to different skills. Skills are additional capabilities for you \
-to serve Tomas needs.
-
-## Remembering
-You keep durable notes about Tomas between conversations with the `remember`, `recall`, and \
-`forget` tools. Saving is cheap and expected — be proactive, you don't need permission and you \
-don't need to mention that you saved something.
-
-Your rule: whenever a message reveals something lasting about Tomas — a preference, habit, \
-routine, goal, constraint, relationship, or fact about his life — and it isn't already under \
-"Memory" below, call `remember` for it in the same turn, alongside your normal reply. Don't \
-save one-off task details, passing context, or anything that won't matter next time.
-
-Store the durable fact behind the message, not the message itself:
-- "I had a long run today" → he runs; remember "Tomas is a runner".
-- "What supplements should I take today?" → he takes supplements; remember that.
-- "My wife and I are flying to Italy in July" → remember he's married, and the trip.
-Always check the "Memory" list first so you don't save a duplicate. If a fact changes or turns \
-out wrong, correct it: `forget` the stale one and `remember` the new version.
-
-About you - you run on a local server in in a docker container. LLM model that is core part \
-of you runs on separate device (DGX Spark).
-"""
+# The base system prompt lives in a Markdown file (tora/prompts/system.md) so its
+# structure is easy to read and edit without touching Python. Loaded once at
+# import — i.e. on startup — and reused for every request; the dynamic bits are
+# spliced in by build_system_prompt() via {{...}} placeholders.
+_SYSTEM_PROMPT_PATH = Path(__file__).resolve().parent / "prompts" / "system.md"
+SYSTEM_PROMPT_TEMPLATE = _SYSTEM_PROMPT_PATH.read_text(encoding="utf-8")
 
 
 def _estimate_tokens(messages: list[dict]) -> int:
@@ -87,17 +61,17 @@ def trim_to_budget(messages: list[dict], max_tokens: int) -> list[dict]:
 def build_system_prompt() -> str:
     """Assemble the full system prompt for one request.
 
-    The base prompt is static, but the date/time and the skills listing are
-    resolved live so they reflect "now" and the currently discovered skills.
-    All system-prompt formatting lives here, in one place.
+    The template (loaded once at startup) is static; the date/time, remembered
+    facts, and skills listing are resolved live and substituted into their
+    ``{{...}}`` placeholders so they reflect "now" and the currently discovered
+    skills/memories. The memory and skills sections carry their own headers and
+    collapse to "" when empty, so the placeholders just splice in cleanly.
     """
     now = datetime.now().astimezone()
-    date_line = f"\n\nThe current date and time is {now:%A, %d %B %Y, %H:%M %Z}."
     return (
-        SYSTEM_PROMPT
-        + date_line
-        + memory.store.prompt_section()
-        + skills.registry.prompt_section()
+        SYSTEM_PROMPT_TEMPLATE.replace("{{datetime}}", f"{now:%A, %d %B %Y, %H:%M %Z}")
+        .replace("{{memory}}", memory.store.prompt_section())
+        .replace("{{skills}}", skills.registry.prompt_section())
     )
 
 

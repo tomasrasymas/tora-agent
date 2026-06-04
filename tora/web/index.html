@@ -146,6 +146,25 @@
         #sidebarToggle {
           display: flex;
         }
+
+        /* Empty state: greeting near the top, composer pinned to the bottom
+           (thumb reach) instead of floating in the middle of the screen. */
+        .stage {
+          justify-content: space-between;
+          padding-top: 72px; /* clear the fixed sidebar toggle */
+        }
+        #hero { margin-bottom: 0; }
+        #hero h1 { font-size: 32px; }
+        #hero p { font-size: 16px; }
+
+        /* Keep the model badge on a single short line: drop the quant pills and
+           show just the family name, so the composer doesn't grow several rows
+           tall and eat the screen. */
+        .badge {
+          max-width: 48%;
+          flex-wrap: nowrap;
+        }
+        .badge .pill { display: none; }
       }
 
       /* Scroll region: holds the centered empty-state stage, and once chatting,
@@ -471,7 +490,7 @@
     <main id="scroller">
       <div class="stage" id="stage">
         <div id="hero">
-          <h1>Hey, <span class="accent">Tomas</span></h1>
+          <h1>Hey, <span class="accent">human</span></h1>
         </div>
 
         <!-- The composer lives here while empty; JS relocates it to <footer>
