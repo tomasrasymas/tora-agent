@@ -6,7 +6,7 @@ This is a learning project as much as a product. I'm documenting every decision,
 
 ## Status
 
-Early but usable. Model selection and benchmarking are done (16 model × quant combos; winner: `gemma-4-26B-A4B-it` at Q8), and the agent itself runs: a streaming chat backend with a tool loop, a `bash` tool, on-demand skills, long-term memory, and persisted conversations, all behind a single-page web UI.
+Early but usable. Model selection and benchmarking are done (16 model × quant combos; winner: `gemma-4-26B-A4B-it` at Q8), and the agent itself runs: a streaming chat backend with a tool loop, a `bash` tool, web search and fetch (self-hosted SearXNG), on-demand skills, long-term memory, and persisted conversations, all behind a single-page web UI.
 
 ## Hardware
 
@@ -26,7 +26,8 @@ NVIDIA DGX Spark — GB10 Grace Blackwell, 128GB unified memory (CPU+GPU).
 | Model families | Gemma 4, Qwen3.6 | GGUF builds from Unsloth, run via llama.cpp |
 | Backend | FastAPI, Python 3.13, `uv` | Streaming chat, the tool loop, SQLite persistence |
 | Frontend | Single-page HTML/JS | Served by the backend; reads the NDJSON token stream |
-| Packaging | Docker | Agent containerized on the workstation; the model stays on the DGX |
+| Web search | SearXNG, trafilatura | Self-hosted metasearch backend; readable-text extraction for fetched pages |
+| Packaging | Docker | Agent + SearXNG containerized on the workstation; the model stays on the DGX |
 
 ## How the agent works
 
@@ -54,7 +55,7 @@ Key modules (all under `tora/`):
 |---|---|
 | `llm.py` | Talking to the model: streaming turns, parsing tool calls |
 | `agent.py` | The chat/tool loop and system-prompt assembly |
-| `tools/` | The tool registry and individual tools (`bash`, `load_skill`, memory) |
+| `tools/` | The tool registry and individual tools (`bash`, `load_skill`, memory, web search/fetch) |
 | `skills.py` | Skill discovery and progressive disclosure |
 | `memory.py` | Long-term memory — durable facts about me |
 | `storage.py` | Conversation persistence (SQLite, one JSON blob per conversation) |
@@ -87,6 +88,36 @@ The model has a small set of built-in tools, dispatched by the agent loop:
 - **`load_skill`** — pulls the full instructions for a skill on demand (see
   [Skills](#skills)).
 - **`remember` / `recall` / `forget`** — long-term memory (see [Memory](#memory)).
+- **`web_search` / `web_fetch`** — search the live web and read pages (see
+  [Web search](#web-search)).
+
+## Web search
+
+TORA can reach the live web for current events, prices, and anything that's
+changed since the model's training cutoff. It's deliberately two tools so the
+model only pays for the content it actually needs:
+
+- **`web_search`** — queries a self-hosted [SearXNG](https://docs.searxng.org/)
+  instance and returns ranked result snippets (title, URL, short summary).
+  Cheap — gives the model candidates to choose from. Pass `time_range`
+  (`day`/`week`/`month`/`year`) when freshness matters.
+- **`web_fetch`** — downloads one URL and extracts the readable article text
+  with [trafilatura](https://trafilatura.readthedocs.io/) (navigation, ads, and
+  boilerplate stripped). This is where the real content comes from, once the
+  model picks a result worth reading.
+
+Snippets are clipped to 500 chars and fetched pages to 10k chars to keep them
+from swamping the context window. Errors (SearXNG down, a page that won't
+extract) are *returned* to the model as text rather than raised, so it can read
+the problem and adapt.
+
+SearXNG runs as a sibling container defined in `docker-compose.yml`; its config
+lives in [`searxng/settings.yml`](./searxng/settings.yml). Two settings there are
+load-bearing: `search.formats` must include `json` (otherwise the API returns a
+403/HTML), and `server.limiter` is off so programmatic calls aren't bot-blocked.
+The backend finds it via `TORA_SEARXNG_URL` (defaults to the compose service
+name `http://searxng:8080`); for local `uv run tora`, point it at wherever you
+run SearXNG, e.g. `http://localhost:8088`.
 
 ## Memory
 
@@ -169,7 +200,10 @@ back, plus a single-page chat frontend (`tora/web/index.html`).
 
 1. Start the llama.cpp server on the DGX with the chosen model (see
    `serve_model.sh`).
-2. Copy `.env.example` to `.env` and point `TORA_LLM_BASE_URL` at it.
+2. Copy `.env.example` to `.env` and point `TORA_LLM_BASE_URL` at it. For web
+   search, also run a SearXNG instance and set `TORA_SEARXNG_URL` (e.g.
+   `http://localhost:8088`); without it `web_search`/`web_fetch` just return an
+   error and the rest of the agent works fine.
 3. Run the backend:
 
    ```bash
@@ -181,9 +215,11 @@ back, plus a single-page chat frontend (`tora/web/index.html`).
 ## Running in Docker
 
 The agent runs on your workstation in Docker; only the model runs on the DGX.
-The image is built with `uv` on Python 3.13. Your custom skills and configs
-live in `~/.tora` on the workstation and are bind-mounted into the container,
-so you can edit them without rebuilding.
+`docker compose up` brings up two services — the agent and a SearXNG container
+that powers web search (reached over the compose network, no host port by
+default). The image is built with `uv` on Python 3.13. Your custom skills and
+configs live in `~/.tora` on the workstation and are bind-mounted into the
+container, so you can edit them without rebuilding.
 
 The container reaches the model over the LAN, so it needs the DGX's IP — point
 `TORA_LLM_BASE_URL` at it (compose errors out if it's unset):
@@ -204,6 +240,9 @@ Notes:
   `~/.tora/.env` for extra config, looks for skills under `~/.tora/skills`, and
   writes memories to `~/.tora/memory`. You can mount it read-only (`:ro` in
   `docker-compose.yml`), but then the agent can't save new memories.
+- SearXNG has no host port by default. To poke at its web UI for debugging,
+  uncomment the `ports` mapping under the `searxng` service in
+  `docker-compose.yml` (exposes it on `127.0.0.1:8088`).
 
 ## Skills
 

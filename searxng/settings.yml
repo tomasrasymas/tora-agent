@@ -1,0 +1,32 @@
+# SearXNG config for TORA. Lives in the repo and is mounted into the container
+# via docker-compose.yml (./searxng -> /etc/searxng). Only the keys that differ
+# from SearXNG's shipped defaults are set here; use_default_settings merges the rest.
+#
+# Two settings are load-bearing for the agent's web_search tool:
+#   - search.formats includes "json"  -> the tool gets JSON instead of a 403/HTML
+#   - server.limiter: false           -> programmatic API calls aren't bot-blocked
+#                                         (and we don't need a Redis/Valkey container)
+use_default_settings: true
+
+server:
+  # Random value generated with `openssl rand -hex 32`.
+  secret_key: "SECRET_KEY"
+  limiter: false
+  image_proxy: false
+
+search:
+  formats:
+    - html
+    - json
+  safe_search: 1
+  default_lang: "en"
+
+# Engines that error on startup in our setup (Tor-only, or a first-run cache
+# issue) and aren't useful here — disabled to keep the logs clean.
+engines:
+  - name: ahmia
+    disabled: true
+  - name: torch
+    disabled: true
+  - name: radio browser
+    disabled: true

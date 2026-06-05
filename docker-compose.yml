@@ -4,6 +4,8 @@ services:
     image: tora-agent:latest
     container_name: tora-agent
     restart: unless-stopped
+    depends_on:
+      - searxng
     ports:
       - "8888:8888"
     environment:
@@ -16,6 +18,8 @@ services:
       TORA_PORT: "8888"
       # Mount point of the host's ~/.tora inside the container (see volumes).
       TORA_HOME: "/root/.tora"
+      # SearXNG search backend — reached by service name on the compose network.
+      TORA_SEARXNG_URL: "http://searxng:8080"
     volumes:
       # Map the host's ~/.tora (with all subfolders, e.g. skills/) into the
       # container. Read-write so the app can create skills_dir if missing.
@@ -23,3 +27,19 @@ services:
     # If you must use the `spark-60bd.local` hostname, uncomment and set the IP:
     # extra_hosts:
     #   - "spark-60bd.local:192.168.x.y"
+
+  # Self-hosted metasearch engine powering web_search / web_fetch. Internal to
+  # the compose network by default (no host port). Its config — including the
+  # JSON output format the tool needs and the disabled rate limiter — lives in
+  # ./searxng/settings.yml.
+  searxng:
+    image: searxng/searxng:latest
+    container_name: tora-searxng
+    restart: unless-stopped
+    volumes:
+      - "./searxng:/etc/searxng:rw"
+    environment:
+      SEARXNG_BASE_URL: "http://searxng:8080/"
+    # Uncomment to reach the SearXNG web UI from the host for debugging:
+    # ports:
+    #   - "127.0.0.1:8088:8080"
