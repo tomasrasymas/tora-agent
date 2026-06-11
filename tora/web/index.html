@@ -25,8 +25,14 @@
       html { height: 100%; -webkit-text-size-adjust: 100%; }
       body {
         margin: 0;
-        /* Dynamic viewport height; JS overrides with the exact visible height
-           so the composer stays above the iOS keyboard. */
+        /* Pinned out of flow so it can be sized/positioned to the *visual*
+           viewport: JS sets the exact visible height and follows the viewport's
+           offsetTop, so the composer stays glued above the mobile keyboard
+           instead of jumping up when the keyboard opens. */
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
         height: 100vh;
         height: 100dvh;
         background: var(--bg);
@@ -1082,14 +1088,17 @@
       const savedId = localStorage.getItem("tora.cid");
       if (savedId) openConversation(savedId);
 
-      // iOS Safari doesn't resize the layout when the keyboard opens — it just
-      // shrinks the visual viewport and scrolls. Pin the body to the visible
-      // height so the composer stays above the keyboard, and keep chat pinned
-      // to the bottom.
+      // Mobile keyboards (esp. iOS Safari) don't resize the layout when they
+      // open — they shrink the visual viewport AND scroll it down by some
+      // offsetTop. Since the body is fixed, match its height to the visible
+      // area and translate it by offsetTop so it tracks the visual viewport:
+      // the footer composer then stays pinned just above the keyboard instead
+      // of jumping to the top of the screen.
       const vv = window.visualViewport;
       if (vv) {
         const fit = () => {
-          document.body.style.height = vv.height + "px";
+          bodyEl.style.height = vv.height + "px";
+          bodyEl.style.transform = "translateY(" + vv.offsetTop + "px)";
           if (bodyEl.classList.contains("chatting")) scrollToBottom();
         };
         vv.addEventListener("resize", fit);
