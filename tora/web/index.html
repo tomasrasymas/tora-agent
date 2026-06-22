@@ -423,6 +423,35 @@
         color: var(--accent-text);
       }
 
+      .suggestions {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 10px;
+        margin-top: 18px;
+        max-width: 720px;
+      }
+      .suggestion-btn {
+        flex-shrink: 0;
+        height: 36px;
+        padding: 0 16px;
+        border-radius: 18px;
+        border: 1px solid var(--composer-border);
+        background: var(--surface);
+        color: var(--text);
+        font: inherit;
+        font-size: 14px;
+        font-weight: 500;
+        cursor: pointer;
+        touch-action: manipulation;
+        transition: border-color 0.15s, background 0.15s;
+      }
+      .suggestion-btn:hover {
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+      .suggestion-btn:active { transform: scale(0.96); }
+
       .send-btn {
         flex-shrink: 0;
         width: 36px;
@@ -524,6 +553,12 @@
               </svg>
             </button>
           </div>
+        </div>
+
+        <div class="suggestions" id="suggestions">
+          <button class="suggestion-btn" type="button">Supplements for today</button>
+          <button class="suggestion-btn" type="button">What's on my schedule?</button>
+          <button class="suggestion-btn" type="button">Summarize my unread emails</button>
         </div>
       </div>
 
@@ -1076,6 +1111,16 @@
           e.preventDefault();
           send();
         }
+      });
+
+      // Quick-suggestion pills on the empty state: drop the text in and send.
+      document.querySelectorAll("#suggestions .suggestion-btn").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          inputEl.value = btn.textContent.trim();
+          autosize();
+          refreshSendState();
+          send();
+        });
       });
 
       newChatBtn.addEventListener("click", newChat);
